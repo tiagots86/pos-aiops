@@ -1,4 +1,1 @@
-ask define o objetivo analítico: gerar um relatório mensal de transações por categoria nos últimos 6 meses.
-Action aparece nas regras técnicas, como filtros de status, categorias, janela temporal, agregações e uso de funções PostgreSQL.
-Goal explicita o resultado final esperado: uma única query SQL executiva com métricas de volume e contagem.
-A solução reflete diretamente esses três elementos ao estruturar a query conforme essas restrições e formato de saída.
+O prompt usa o framework B-A-B: no Before, apresenta um Deployment Kubernetes legado com problemas reais (latest, secrets em texto plano, ausência de probes, resources e segurança). No After, define claramente o estado final esperado com boas práticas modernas de produção. No Bridge, orienta como transformar o YAML, atuando como engenheiro de plataforma para aplicar as melhorias

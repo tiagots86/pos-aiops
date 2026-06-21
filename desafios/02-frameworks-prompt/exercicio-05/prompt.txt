@@ -1,52 +1,52 @@
-Prompt (framework T-A-G para gerar a query SQL):
+Prompt B-A-B — Modernização de Deployment Kubernetes
+B — Before (Contexto atual)
 
-T — Task (Tarefa)
+Você recebe um manifesto Kubernetes legado de um Deployment em produção. Ele foi criado há alguns anos e não segue os padrões atuais de confiabilidade, segurança e observabilidade da empresa.
 
-Você é um especialista em SQL e PostgreSQL. Sua tarefa é escrever uma query SQL que gere um relatório mensal de transações do Ledger, consolidando o crescimento de transações nos últimos 6 meses por categoria.
+Problemas típicos presentes:
 
-A — Action (Ação)
+Uso de image: latest
+Secrets expostos em texto plano no YAML
+Falta de alta disponibilidade (replicas insuficientes)
+Ausência de resources.requests e resources.limits
+Falta de livenessProbe e readinessProbe
+Falta de securityContext restritivo (container roda como root)
+Configuração não alinhada com práticas modernas de produção
+A — After (Resultado esperado)
 
-Use as tabelas abaixo como fonte de dados:
+Você deve gerar um manifest Kubernetes modernizado e pronto para produção, mantendo a mesma aplicação, mas com todas as boas práticas atuais aplicadas.
 
-CREATE TABLE transactions (
-  id              BIGSERIAL PRIMARY KEY,
-  customer_id     BIGINT NOT NULL REFERENCES customers(id),
-  category        VARCHAR(32) NOT NULL,
-  amount_cents    BIGINT NOT NULL,
-  status          VARCHAR(16) NOT NULL,
-  payment_method  VARCHAR(16),
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  completed_at    TIMESTAMPTZ
-);
+O output deve conter:
 
-CREATE TABLE customers (
-  id          BIGSERIAL PRIMARY KEY,
-  segment     VARCHAR(16) NOT NULL,
-  country     CHAR(2) NOT NULL,
-  signup_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+replicas configurado para alta disponibilidade (mínimo 2 ou mais)
+Imagem versionada (sem latest)
+Remoção de secrets do manifest (substituir por referências a Secret)
+resources.requests e resources.limits definidos corretamente
+livenessProbe e readinessProbe configurados para o container
+securityContext garantindo execução como usuário não-root
+Manter namespace, nome e estrutura base do Deployment
+Código YAML válido e pronto para aplicar com kubectl
+B — Bridge (Como transformar o input em output)
 
-Regras obrigatórias:
+Você é um engenheiro de plataforma Kubernetes sênior.
 
-Considerar apenas transações com status = 'completed'
-Incluir apenas as categorias:
-subscription
-one_time
-refund
-credit_adjustment
-Recorte temporal: últimos 6 meses corridos a partir de 2026-04-24
-Agrupar por:
-mês no formato YYYY-MM
-categoria
-Métricas por grupo:
-quantidade de transações
-volume total em reais (converter amount_cents / 100.0 com 2 casas decimais)
-Ordenação final:
-mês crescente
-categoria crescente
+Ao receber um manifesto YAML de Deployment:
 
-Use funções nativas do PostgreSQL para agregação e formatação de datas (ex: date_trunc, to_char).
+Analise o YAML e identifique práticas inseguras ou obsoletas.
+Preserve a intenção original da aplicação.
+Substitua valores inseguros por padrões modernos:
+Secrets devem virar referências a Secret via valueFrom
+Imagens devem usar tag explícita (ex: 1.2.3, nunca latest)
+Adicione configurações obrigatórias de produção:
+requests/limits de CPU e memória
+probes (HTTP ou TCP conforme porta 8080)
+securityContext com runAsNonRoot: true
+Garanta que o Deployment resultante esteja pronto para alta disponibilidade.
+Retorne apenas o YAML final, sem explicações.
+Entrada
 
-G — Goal (Objetivo)
+Você receberá um manifesto Kubernetes como input.
 
-Gerar uma única query SQL válida em PostgreSQL que produza um relatório pronto para apresentação executiva, mostrando a evolução mensal de transações por categoria com contagem e volume financeiro convertido corretamente para reais.
+Saída
+
+Retorne apenas o manifesto Kubernetes modernizado completo.

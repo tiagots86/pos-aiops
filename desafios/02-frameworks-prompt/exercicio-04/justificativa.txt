@@ -1,0 +1,4 @@
+Task define o objetivo analítico: gerar um relatório mensal de transações por categoria nos últimos 6 meses.
+Action aparece nas regras técnicas, como filtros de status, categorias, janela temporal, agregações e uso de funções PostgreSQL.
+Goal explicita o resultado final esperado: uma única query SQL executiva com métricas de volume e contagem.
+A solução reflete diretamente esses três elementos ao estruturar a query

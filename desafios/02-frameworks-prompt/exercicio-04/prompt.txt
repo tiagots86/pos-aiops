@@ -1,0 +1,52 @@
+Prompt (framework T-A-G para gerar a query SQL):
+
+T — Task (Tarefa)
+
+Você é um especialista em SQL e PostgreSQL. Sua tarefa é escrever uma query SQL que gere um relatório mensal de transações do Ledger, consolidando o crescimento de transações nos últimos 6 meses por categoria.
+
+A — Action (Ação)
+
+Use as tabelas abaixo como fonte de dados:
+
+CREATE TABLE transactions (
+  id              BIGSERIAL PRIMARY KEY,
+  customer_id     BIGINT NOT NULL REFERENCES customers(id),
+  category        VARCHAR(32) NOT NULL,
+  amount_cents    BIGINT NOT NULL,
+  status          VARCHAR(16) NOT NULL,
+  payment_method  VARCHAR(16),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at    TIMESTAMPTZ
+);
+
+CREATE TABLE customers (
+  id          BIGSERIAL PRIMARY KEY,
+  segment     VARCHAR(16) NOT NULL,
+  country     CHAR(2) NOT NULL,
+  signup_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+Regras obrigatórias:
+
+Considerar apenas transações com status = 'completed'
+Incluir apenas as categorias:
+subscription
+one_time
+refund
+credit_adjustment
+Recorte temporal: últimos 6 meses corridos a partir de 2026-04-24
+Agrupar por:
+mês no formato YYYY-MM
+categoria
+Métricas por grupo:
+quantidade de transações
+volume total em reais (converter amount_cents / 100.0 com 2 casas decimais)
+Ordenação final:
+mês crescente
+categoria crescente
+
+Use funções nativas do PostgreSQL para agregação e formatação de datas (ex: date_trunc, to_char).
+
+G — Goal (Objetivo)
+
+Gerar uma única query SQL válida em PostgreSQL que produza um relatório pronto para apresentação executiva, mostrando a evolução mensal de transações por categoria com contagem e volume financeiro convertido corretamente para reais.
