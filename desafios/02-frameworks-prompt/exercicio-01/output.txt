@@ -1,0 +1,72 @@
+# -----------------------------------------------------------------------------
+# Imagem base oficial do Python.
+# Utiliza uma versão "slim" para reduzir o tamanho final da imagem.
+# -----------------------------------------------------------------------------
+FROM python:3.12-slim
+
+# -----------------------------------------------------------------------------
+# Define variáveis de ambiente do Python:
+# - PYTHONDONTWRITEBYTECODE: evita geração de arquivos .pyc
+# - PYTHONUNBUFFERED: envia logs diretamente para stdout/stderr
+#   (importante para observabilidade em Kubernetes)
+# -----------------------------------------------------------------------------
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# -----------------------------------------------------------------------------
+# Define o diretório de trabalho dentro do container.
+# Todos os comandos seguintes serão executados a partir deste caminho.
+# -----------------------------------------------------------------------------
+WORKDIR /app
+
+# -----------------------------------------------------------------------------
+# Instala dependências de sistema necessárias.
+# gcc e libpq-dev são utilizados para garantir compatibilidade com bibliotecas
+# relacionadas ao PostgreSQL (psycopg2-binary).
+#
+# Remove cache do apt ao final para manter a imagem menor.
+# -----------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# -----------------------------------------------------------------------------
+# Copia apenas o arquivo de dependências primeiro.
+# Isso aproveita o cache de camadas do Docker e acelera builds futuros.
+# -----------------------------------------------------------------------------
+COPY requirements.txt .
+
+# -----------------------------------------------------------------------------
+# Instala as dependências Python definidas no requirements.txt.
+# --no-cache-dir evita armazenar cache do pip dentro da imagem.
+# -----------------------------------------------------------------------------
+RUN pip install --no-cache-dir -r requirements.txt
+
+# -----------------------------------------------------------------------------
+# Copia o restante do código da aplicação para dentro do container.
+# Inclui app.py, diretório lib/ e demais arquivos necessários.
+# -----------------------------------------------------------------------------
+COPY . .
+
+# -----------------------------------------------------------------------------
+# Documenta que a aplicação escuta na porta 8080.
+# Não publica a porta automaticamente, mas serve como metadado.
+# -----------------------------------------------------------------------------
+EXPOSE 8080
+
+# -----------------------------------------------------------------------------
+# Define variáveis obrigatórias esperadas em runtime.
+# Os valores serão fornecidos pelo Kubernetes (ConfigMap, Secret ou env vars).
+# Os valores vazios servem apenas como documentação.
+# -----------------------------------------------------------------------------
+ENV DATABASE_URL="" \
+    API_KEY=""
+
+# -----------------------------------------------------------------------------
+# Executa a aplicação utilizando Gunicorn conforme especificado.
+# - Bind em todas as interfaces na porta 8080
+# - 4 workers para processamento concorrente
+# - app:app => módulo app.py contendo a instância Flask chamada "app"
+# -----------------------------------------------------------------------------
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "4", "app:app"]
