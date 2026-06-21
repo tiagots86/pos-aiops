@@ -1,0 +1,3 @@
+O componente T (Task) aparece na definição explícita de gerar um relatório executivo de redução de custos a partir do CSV.
+O componente A (Action) está nas instruções de cálculo do custo total, identificação de oportunidades, estimativas e priorização por impacto.
+O componente G (Goal) é a meta de reduzir pelo menos 15% do custo total sem degradar SLA e entregar um plano acionável.

@@ -1,0 +1,55 @@
+Resumo executivo
+
+O ambiente AWS analisado tem custo mensal elevado concentrado em compute (EC2/EKS) e databases (RDS), representando os principais vetores de otimização.
+Há oportunidades claras de redução sem impacto em SLA, principalmente via Savings Plans/RI, rightsizing e otimização de arquitetura de rede e observabilidade.
+A economia potencial identificada ultrapassa a meta de 15%, com foco em 3 ações principais que sozinhas já atingem ~15% de redução.
+Recomenda-se execução faseada para evitar risco em workloads críticos.
+
+Custo total mensal
+
+US$ 41.800
+
+Meta de economia (15%)
+
+US$ 6.270/mês
+
+Tabela de oportunidades (priorizada por impacto)
+Oportunidade	Serviço	Economia USD	% do total	Esforço	Risco / Pré-requisito
+Conversão para Savings Plans + rightsizing de instâncias	EC2 on-demand	2.870	6,86%	Médio	Análise de padrões de uso, validação de capacidade e janelas de carga
+Otimização de cluster + consolidação de workloads	EKS	1.675	4,01%	Alto	Reorganização de workloads, possível redesign de namespaces e node groups
+Otimização de arquitetura e instâncias reservadas (RI)	RDS PostgreSQL (Multi-AZ)	1.640	3,92%	Médio/Alto	Avaliação de carga, possível downgrade de instância e tuning de HA
+Redução de retenção e arquivamento de logs	CloudWatch Logs	1.120	2,68%	Baixo	Alinhamento com compliance (reduzir 90 → 30 dias + S3 archive)
+Redução de NAT Gateways via VPC Endpoints	NAT Gateway	600	1,44%	Médio/Alto	Mudança de arquitetura de rede
+Otimização de Data Transfer entre regiões	Data Transfer Out	570	1,36%	Alto	Re-arquitetura de comunicação entre regiões / locality
+Lifecycle policies (IA/Glacier + compressão)	S3 Standard	620	1,48%	Baixo/Médio	Classificação correta de dados
+Rightsizing Redis + ajuste de cluster	ElastiCache Redis	525	1,26%	Médio	Avaliar cache hit ratio e memória real usada
+Otimização de volumes gp3 + snapshots	EBS gp3	240	0,57%	Baixo	Ajuste de IOPS provisionados e limpeza de snapshots
+Otimização de invocações e memória	Lambda	180	0,43%	Baixo	Ajuste de memória/timeout e revisão de triggers
+Ajuste de retenção de métricas	CloudWatch Metrics	180	0,43%	Baixo	Revisão de granularidade e retenção
+
+lano recomendado (Top 3 ações combinadas)
+EC2 on-demand → Savings Plans + rightsizing
+Economia: US$ 2.870
+Ação mais imediata e de menor risco
+Base para padronizar governança de compute
+Otimização de EKS (consolidação de clusters e workloads)
+Economia: US$ 1.675
+Redução de infraestrutura ociosa entre clusters
+Maior impacto estrutural (requer engenharia)
+Otimização de RDS PostgreSQL (RI + tuning Multi-AZ)
+Economia: US$ 1.640
+Ajuste de sizing e reservas com impacto direto em custo fixo
+Resultado combinado:
+
+US$ 6.185 (~14,8%)
+
+➡️ Para ultrapassar com folga a meta de 15%:
+
+Adicionar CloudWatch Logs optimization (+US$ 1.120)
+→ Total potencial: US$ 7.305 (~17,5%)
+Riscos gerais
+Risco de sobrecarga em rightsizing inadequado (EC2/RDS) caso padrões sazonais não sejam corretamente modelados
+Complexidade operacional elevada em EKS, podendo afetar deploy pipelines durante consolidação
+Impacto em observabilidade se retenção de logs for reduzida sem estratégia de arquivamento
+Dependências entre serviços de rede (NAT / Data Transfer) podem causar efeitos colaterais em latência e arquitetura híbrida
+Necessidade de validação contínua de SLA antes de cortes mais agressivos
