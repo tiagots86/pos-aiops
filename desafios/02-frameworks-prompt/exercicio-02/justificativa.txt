@@ -1,0 +1,3 @@
+O script usa pg_dump + gzip + AWS CLI + cron/logs, caracterizando o framework de automação de backup e transferência (ETL simples de backup). O fluxo “extração (pg_dump) → transformação (compressão) → carga (S3) + retenção” demonstra um pipeline completo e automatizado.
+
+Comparado a alternativas como rsync + cron e snapshot de EBS, o primeiro não garante consistência lógica do banco PostgreSQL e o segundo não permite retenção granular por objeto nem portabilidade do dump. Já o modelo com pg_dump + S3 oferece maior controle, versionamento e recuperação independente de infraestrutura.

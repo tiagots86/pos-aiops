@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+#
+# ============================================================
+# PostgreSQL Backup Automatizado + Upload S3 + Retenção 30d
+# ============================================================
+#
+# Uso:
+#   - Executado via cron (ex: diário)
+#   - Realiza dump do PostgreSQL, compacta com gzip,
+#     envia para S3 e aplica retenção de 30 dias.
+#
+# Dependências:
+#   - pg_dump (PostgreSQL client)
+#   - gzip
+#   - aws CLI configurado com IAM Role (sem keys)
+#
+# Autenticação:
+#   - PGPASSWORD deve estar disponível via variável de ambiente
+#     (ex: AWS Secrets Manager + IAM Role da instância)
+#
+# Exit codes:
+#   0 = sucesso
+#   1 = falha em validação / dump / upload / retenção
+#
+# ============================================================
+
+set -o pipefail
+
+############################
+# Configurações editáveis  #
+############################
+
+DB_HOST="ledger-db.internal.hvt.io"
+DB_PORT="5432"
+DB_NAME="ledger_prod"
+DB_USER="backup_user"
+
+BACKUP_DIR="/var/backups/ledger"
+LOG_FILE="/var/log/ledger-backup.log"
+
+S3_BUCKET="hvt-ledger-backups"
+S3_PREFIX="ledger_prod"
+
+AWS_REGION="us-east-1"
+
+RETENTION_DAYS=30
+
+############################
+# Funções auxiliares       #
+############################
+
+log() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
+}
+
+fail() {
+  log "ERROR: $1"
+  exit 1
+}
+
+############################
+# Validações iniciais      #
+############################
+
+mkdir -p "$BACKUP_DIR" || fail "Não foi possível criar BACKUP_DIR"
+touch "$LOG_FILE" || fail "Não foi possível acessar LOG_FILE"
+
+command -v pg_dump >/dev/null 2>&1 || fail "pg_dump não encontrado"
+command -v aws >/dev/null 2>&1 || fail "aws CLI não encontrado"
+command -v gzip >/dev/null 2>&1 || fail "gzip não encontrado"
+
+[ -z "${PGPASSWORD:-}" ] && fail "PGPASSWORD não definida (Secrets Manager?)"
+
+############################
+# Variáveis do backup      #
+############################
+
+TIMESTAMP="$(date +'%Y%m%d_%H%M%S')"
+FILE_NAME="${DB_NAME}_${TIMESTAMP}.sql.gz"
+LOCAL_FILE="${BACKUP_DIR}/${FILE_NAME}"
+S3_PATH="s3://${S3_BUCKET}/${S3_PREFIX}/${FILE_NAME}"
+
+log "Iniciando backup do banco ${DB_NAME}"
+
+############################
+# Dump + compressão        #
+############################
+
+log "Executando pg_dump..."
+
+pg_dump \
+  -h "$DB_HOST" \
+  -p "$DB_PORT" \
+  -U "$DB_USER" \
+  -d "$DB_NAME" \
+  --no-owner --no-acl \
+  | gzip > "$LOCAL_FILE"
+
+if [ $? -ne 0 ]; then
+  rm -f "$LOCAL_FILE"
+  fail "Falha no pg_dump ou compressão"
+fi
+
+log "Dump gerado: $LOCAL_FILE"
+
+############################
+# Upload para S3           #
+############################
+
+log "Enviando backup para S3: $S3_PATH"
+
+aws s3 cp "$LOCAL_FILE" "$S3_PATH" \
+  --region "$AWS_REGION"
+
+if [ $? -ne 0 ]; then
+  fail "Falha no upload para S3"
+fi
+
+log "Upload concluído com sucesso"
+
+############################
+# Retenção (30 dias)       #
+############################
+
+log "Aplicando retenção de ${RETENTION_DAYS} dias no S3..."
+
+CUTOFF_EPOCH=$(date -d "-${RETENTION_DAYS} days" +%s)
+
+OBJECTS=$(aws s3api list-objects-v2 \
+  --bucket "$S3_BUCKET" \
+  --prefix "$S3_PREFIX/" \
+  --region "$AWS_REGION" \
+  --query "Contents[].{Key: Key, LastModified: LastModified}" \
+  --output text)
+
+if [ -n "$OBJECTS" ]; then
+  echo "$OBJECTS" | while read -r key lastmod; do
+    # lastmod vem em formato ISO 8601
+    obj_epoch=$(date -d "$lastmod" +%s)
+
+    if [ "$obj_epoch" -lt "$CUTOFF_EPOCH" ]; then
+      log "Removendo objeto antigo: $key"
+
+      aws s3 rm "s3://${S3_BUCKET}/${key}" --region "$AWS_REGION"
+
+      if [ $? -ne 0 ]; then
+        log "WARNING: falha ao remover $key"
+      fi
+    fi
+  done
+fi
+
+############################
+# Finalização              #
+############################
+
+log "Backup finalizado com sucesso"
+exit 0
