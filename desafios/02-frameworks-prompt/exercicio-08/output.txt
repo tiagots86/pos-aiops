@@ -1,0 +1,174 @@
+## A — Analysis (Diagnóstico técnico)
+
+### Causa mais provável do incidente
+
+**Regressão introduzida no deploy v2.48.0 causando exaustão de pool de conexões do Ledger + saturação do limite de conexões do RDS**, levando a um efeito cascata de timeouts e filas.
+
+### Correlação direta com o deploy
+
+Mudanças altamente correlacionadas com o início da degradação:
+
+* **Refactor do cliente Ledger (mudança de lib interna)**
+  → Evidência direta: `pool de conexões Ledger esgotado (20/20 ativos, 147 aguardando)`
+* **Upgrade psycopg 3.1.18 → 3.2.0**
+  → Possível mudança de comportamento em pooling / lifecycle de conexões
+* **Timeout reduzido 5s → 2s no Ledger**
+  → Amplifica falhas sob carga (mais retries, mais concorrência acumulada)
+* **Novo endpoint batch**
+  → Aumenta pressão concorrente sobre DB (1200 → 2650 req/s)
+
+### Classificação do problema (multi-fator, mas com raiz clara)
+
+* ✔ **Pool de conexões**: CAUSA PRIMÁRIA (exaurido no app e próximo do limite no RDS)
+* ✔ **Timeout DB**: CAUSA AGRAVANTE (2s insuficiente sob carga + retry storm)
+* ✔ **Regressão psycopg / client Ledger**: ALTAMENTE SUSPEITA (mudança coincide com início)
+* ✔ **Mudança lib Ledger client**: PROVÁVEL CAUSA RAIZ (pool + lifecycle alterado)
+* ✔ **Backpressure da fila (SQS)**: CONSEQUÊNCIA, não causa
+
+---
+
+### Tipo de incidente
+
+**Efeito cascata clássico: DB saturation → API degradation → fila crescendo**
+
+Fluxo confirmado:
+
+1. Ledger DB começa a saturar (240/250 conexões RDS)
+2. Pool app esgota (20/20 ativos, 147 aguardando)
+3. Requests entram em fila → latency explode (420ms → 8100ms)
+4. Timeouts + circuit breaker OPEN (87% failure)
+5. Consumers falham → SQS backlog cresce (800/min)
+6. Retry amplification piora tudo
+
+---
+
+### Por que latência e erro sobem simultaneamente?
+
+* Pool saturado → requests aguardam conexão → latência explode
+* Timeout de 2s dispara antes da resposta → erro aumenta
+* Circuit breaker abre → aumenta falhas rápidas
+* Retries amplificam carga → degradação auto-reforçada
+
+---
+
+### Por que CPU não está alta (62%)?
+
+Porque o sistema está:
+
+* **IO-bound e blocked**, não compute-bound
+* Threads aguardando:
+
+  * conexão DB
+  * resposta do Ledger
+* Gargalo não é processamento → é **contenção de recursos externos**
+
+---
+
+### Impacto das dependências
+
+#### Ledger (PostgreSQL)
+
+* ✔ **Gargalo principal**
+* Próximo do limite de conexões (240/250)
+* Pool app completamente saturado
+* Principal ponto de falha
+
+#### Reactor (SQS)
+
+* ❌ Não é causa
+* ✔ Apenas consequência do backlog de processamento
+* Crescimento de fila confirma downstream collapse
+
+---
+
+## R — Recommendation (Decisão)
+
+### ✅ DECISÃO: **A. ROLLBACK IMEDIATO para v2.47.0**
+
+### Justificativa técnica
+
+* Alta confiança de regressão introduzida no deploy
+* Saturação de DB e pool começou imediatamente após release
+* Infra já está no limite (RDS 240/250) → scaling não resolve causa raiz
+* Timeout reduzido amplifica falha em vez de mitigar
+* Circuit breaker já aberto → sistema em modo degradado profundo
+
+**Scaling isolado NÃO resolve:**
+
+* Não reduz pressão de pool
+* Não corrige possível leak/regressão no client
+* Pode piorar RDS (já no limite)
+
+Rollback é a única ação com reversão rápida e impacto imediato positivo.
+
+---
+
+## E — Execution (Plano imediato)
+
+### 1. ROLLBACK via Argo CD
+
+```bash
+argocd app rollback chronos-api
+--to-revision 47
+```
+
+* **Objetivo:** Restaurar versão estável v2.47.0
+* **Risco:** baixo (reversão conhecida)
+* **Sinal de sucesso:** queda imediata de error rate (<2%) em 2–5 min
+
+---
+
+### 2. Forçar resync e restart controlado
+
+```bash
+argocd app sync chronos-api
+kubectl rollout restart deployment chronos-api
+```
+
+* **Objetivo:** eliminar estado residual de pool quebrado
+* **Risco:** breve churn de tráfego
+* **Sinal de sucesso:** redução de 147 waiting connections → <20
+
+---
+
+### 3. Mitigação emergencial de consumers SQS (opcional imediato)
+
+```bash
+kubectl scale deployment reactor-consumer --replicas=2
+```
+
+* **Objetivo:** evitar retry storm durante rollback
+* **Risco:** aumento temporário de backlog (aceitável)
+* **Sinal de sucesso:** crescimento da fila desacelera (<200/min)
+
+---
+
+### 4. Proteção temporária do RDS (monitoramento ativo)
+
+* Se possível (janela curta):
+
+  * aumentar `max_connections` marginalmente (+10–15%)
+* **Objetivo:** aliviar pressão durante rollback
+* **Risco:** médio (efeito limitado se pool não corrigido)
+* **Sinal de sucesso:** RDS connections <220 em 5 min
+
+---
+
+### 5. Verificação pós-rollback (2–5 min)
+
+Monitorar:
+
+* error rate → **<2%**
+* p99 latency → **<500ms**
+* pool Ledger:
+
+  * active <20
+  * waiting ≈ 0
+* RDS connections → **queda para <200**
+* SQS backlog → estabilização (sem crescimento explosivo)
+
+---
+
+## DECISÃO FINAL PARA DOC BROWN:
+
+**ROLLBACK**

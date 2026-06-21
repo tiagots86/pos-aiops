@@ -1,0 +1,2 @@
+O framework C-A-R-E aparece diretamente na estrutura do prompt: Context reúne todos os dados brutos do incidente (deploy, métricas, logs e estado do cluster); Analysis força a correlação causal entre mudanças de código e sinais de degradação; Recommendation obriga a decisão única e justificável entre rollback ou scaling; e Execution transforma a decisão em ações operacionais executáveis com comandos e critérios de sucesso, garantindo aplicabilidade imediata em ambiente de incidente.
+
