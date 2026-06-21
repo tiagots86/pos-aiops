@@ -1,0 +1,418 @@
+# Runbook — Incidente: Alta Utilização de Memória no Chronos API (EKS)
+
+## 1. Visão do Incidente
+
+### Descrição
+
+O alerta **[CRITICAL] High memory usage on Chronos API pods (>85% for 10min)** indica que os pods do serviço Chronos API estão consumindo memória acima do limite saudável de forma sustentada.
+
+### Impacto esperado
+
+* Risco de **OOMKill (pod reiniciando por falta de memória)**
+* **Degradação de latência da API**
+* Possível aumento de **5xx no gateway**
+* Impacto em dependentes:
+
+  * Ledger (PostgreSQL)
+  * Reactor (SQS)
+
+### Critério de incidente ativo
+
+Considerar incidente ativo quando:
+
+* ≥ 1 pod com uso de memória > 85% por mais de 10 minutos
+* OU aumento consistente de uso em múltiplos pods
+* OU impacto em latência/erros no Grafana (5xx / p95 latency degradado)
+
+---
+
+## 2. Diagnóstico Inicial (executável)
+
+### 2.1 Estado dos pods
+
+```bash
+kubectl get pods -n production -l app=chronos-api -o wide
+```
+
+**O que verifica**
+
+* Se todos os pods estão rodando
+* Se há `CrashLoopBackOff`, `OOMKilled`, `Pending`
+
+**Interpretação**
+
+* `Running`: saudável (mas pode estar sob pressão)
+* `CrashLoopBackOff`: provável OOM ou bug de aplicação
+* `Pending`: problema de cluster/capacidade
+
+**Próximo passo**
+
+* Se houver restart frequente → ir para seção 2.4 (eventos)
+
+---
+
+### 2.2 Consumo de memória por pod
+
+```bash
+kubectl top pod -n production -l app=chronos-api
+```
+
+**O que verifica**
+
+* Uso atual de CPU e memória
+
+**Interpretação**
+
+* Memória > 85% do limite → incidente confirmado
+* Um único pod outlier → possível leak localizado
+* Todos os pods altos → carga sistêmica ou leak global
+
+**Próximo passo**
+
+* Se todos altos → checar HPA (2.5)
+* Se isolado → reinício controlado (3. hipóteses)
+
+---
+
+### 2.3 Eventos recentes do Kubernetes
+
+```bash
+kubectl get events -n production --sort-by=.lastTimestamp | tail -n 30
+```
+
+**O que verifica**
+
+* OOMKills
+* Restart de containers
+* Falhas de scheduling
+
+**Interpretação**
+
+* `OOMKilled` → memory limit insuficiente ou leak
+* `Killing container` → pressão de memória confirmada
+* `FailedScheduling` → falta de recursos no cluster
+
+**Próximo passo**
+
+* OOM recorrente → hipótese de memory leak (3.1)
+
+---
+
+### 2.4 Status dos pods (detalhado)
+
+```bash
+kubectl describe pod -n production -l app=chronos-api
+```
+
+**O que verifica**
+
+* Limits de memória configurados
+* Últimos eventos de restart
+* Motivo de terminação
+
+**Interpretação**
+
+* `Reason: OOMKilled` → confirmação de limite estourado
+* Muitos restarts → instabilidade severa
+
+---
+
+### 2.5 Status do HPA
+
+```bash
+kubectl get hpa -n production chronos-api
+```
+
+**O que verifica**
+
+* Escalonamento automático está respondendo?
+
+**Interpretação**
+
+* `TARGET > 70% CPU` mas não escala → HPA saturado
+* `CURRENT = MAX replicas (12)` → limite atingido
+
+**Próximo passo**
+
+* Se no máximo → escalonamento manual (4.1)
+
+---
+
+### 2.6 Logs via Beacon (erro e memória indireta)
+
+```bash
+# via sistema Beacon (query padrão)
+service:chronos-api level:error OR level:warn OR message:"memory"
+```
+
+**O que verifica**
+
+* Erros de aplicação relacionados a memória
+* spikes de latência ou GC pressure
+
+**Interpretação**
+
+* aumento de GC logs → pressão de heap
+* erros 5xx correlacionados → impacto real
+
+---
+
+### 2.7 Latência e erro da API (Grafana)
+
+Verificar painel:
+
+* Chronos API → Latency (p95/p99)
+* Error rate (5xx)
+
+**Critério**
+
+* p95 > baseline histórico + 2x → degradação ativa
+* 5xx > 1% → impacto confirmado
+
+---
+
+### 2.8 Dependências
+
+#### PostgreSQL (Ledger)
+
+```bash
+kubectl exec -n production deploy/chronos-api -- curl -s ledger:5432
+```
+
+ou via métricas Grafana:
+
+* query latency DB
+* connection pool saturation
+
+**Interpretação**
+
+* DB lento → pode causar retenção de memória (requests acumulados)
+
+---
+
+#### SQS (Reactor)
+
+```bash
+aws sqs get-queue-attributes \
+  --queue-url <REACTOR_QUEUE_URL> \
+  --attribute-names ApproximateNumberOfMessages
+```
+
+**Interpretação**
+
+* backlog alto → processamento atrasado → memória acumulada
+
+---
+
+## 3. Hipóteses Prováveis e Ações Corretivas
+
+---
+
+### 3.1 Memory Leak na aplicação
+
+**Como confirmar**
+
+* Crescimento contínuo de memória sem correlação com tráfego
+* Um ou poucos pods consistentemente acima de 85%
+
+**Ação imediata**
+
+```bash
+kubectl rollout restart deployment chronos-api -n production
+```
+
+**Risco**
+
+* Perda temporária de requests em voo
+* Pode não resolver se leak persistir
+
+---
+
+### 3.2 Aumento inesperado de carga
+
+**Como confirmar**
+
+* Aumento de RPS no Grafana
+* Aumento de mensagens no SQS
+
+**Ação imediata**
+
+```bash
+kubectl scale deployment chronos-api -n production --replicas=10
+```
+
+**Risco**
+
+* Pressão adicional em DB (Ledger)
+* Pode saturar conexões
+
+---
+
+### 3.3 Autoscaling insuficiente
+
+**Como confirmar**
+
+```bash
+kubectl get hpa -n production chronos-api
+```
+
+* HPA no máximo (12 pods)
+* CPU/memória ainda alta
+
+**Ação imediata**
+
+```bash
+kubectl patch hpa chronos-api -n production -p '{"spec":{"maxReplicas":20}}'
+```
+
+**Risco**
+
+* Overprovisioning no cluster
+
+---
+
+### 3.4 Dependência degradada (Ledger / Reactor)
+
+**Como confirmar**
+
+* DB latency ↑
+* SQS backlog crescente
+
+**Ação imediata**
+
+* Evitar restart agressivo
+* Reduzir carga:
+
+```bash
+kubectl scale deployment chronos-api -n production --replicas=4
+```
+
+**Risco**
+
+* Backpressure na API
+
+---
+
+## 4. Ações de Mitigação (ordem de execução)
+
+### 1. Restart controlado
+
+```bash
+kubectl rollout restart deployment chronos-api -n production
+```
+
+---
+
+### 2. Verificar recuperação pós-restart
+
+```bash
+kubectl get pods -n production -l app=chronos-api -w
+```
+
+---
+
+### 3. Escalonamento emergencial (se necessário)
+
+```bash
+kubectl scale deployment chronos-api -n production --replicas=10
+```
+
+---
+
+### 4. Ajuste temporário de HPA
+
+```bash
+kubectl patch hpa chronos-api -n production -p '{"spec":{"maxReplicas":15}}'
+```
+
+---
+
+### 5. Verificar limits (rápido audit)
+
+```bash
+kubectl describe deployment chronos-api -n production | grep -A10 Limits
+```
+
+**Se limits baixos (<1Gi):**
+→ provável causa estrutural
+
+---
+
+## 5. Critérios de Escalonamento (@chronos-core)
+
+Escalar imediatamente se:
+
+* Memória > 90% após 15 min pós-mitigação
+* OOMKilled persistente após rollout restart
+* 5xx > 5% por mais de 10 min (Grafana)
+* DB Ledger com latência crítica (>500ms sustentado)
+* SQS backlog crescendo continuamente sem recuperação
+
+---
+
+### Mensagem Slack pronta
+
+```
+:alert: Chronos API incident - high memory usage
+
+Ações executadas:
+- Restart rollout realizado
+- Scale ajustado (se aplicável)
+
+Status atual:
+- Memória ainda >85% em alguns pods
+- Investigação em andamento
+
+Escalando para @chronos-core devido persistência do consumo de memória.
+```
+
+Canal: #oncall-chronos
+
+---
+
+## 6. Critérios de Encerramento
+
+Considerar incidente resolvido quando:
+
+* Memória < 80% em todos os pods por **15 minutos contínuos**
+* Sem eventos de OOMKilled
+* 5xx < 1% sustentado no Grafana
+* Latência p95 normalizada
+* Logs Beacon sem erros críticos recorrentes
+
+Validar:
+
+```bash
+kubectl top pod -n production -l app=chronos-api
+```
+
+---
+
+## 7. Pós-Incidente (Obrigatório)
+
+### O que registrar no postmortem
+
+* Timeline do incidente
+* Primeira detecção (alerta Beacon)
+* Ação tomada (restart/scale/HPA)
+* Tempo até mitigação
+* Impacto em usuários (latência/erros)
+* Dependências envolvidas (Ledger / Reactor)
+
+---
+
+### Melhorias recomendadas
+
+* Ajustar **limits de memória por container**
+* Investigar **memory leak com profiling (pprof ou similar)**
+* Melhorar **HPA baseado em memória (não só CPU)**
+* Adicionar alerta para:
+
+  * crescimento de memória por pod (rate-based)
+* Implementar **tracing distribuído (OpenTelemetry)** para requests longos
+* Revisar pool de conexões do PostgreSQL (Ledger)
+* Backpressure control no consumo do SQS (Reactor)
+
+---
+
+Fim do runbook.
