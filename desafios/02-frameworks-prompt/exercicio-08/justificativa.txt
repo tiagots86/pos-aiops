@@ -1,2 +1,32 @@
 O framework C-A-R-E aparece diretamente na estrutura do prompt: Context reúne todos os dados brutos do incidente (deploy, métricas, logs e estado do cluster); Analysis força a correlação causal entre mudanças de código e sinais de degradação; Recommendation obriga a decisão única e justificável entre rollback ou scaling; e Execution transforma a decisão em ações operacionais executáveis com comandos e critérios de sucesso, garantindo aplicabilidade imediata em ambiente de incidente.
 
+O framework escolhido foi C-A-R-E (Context, Analysis, Recommendation, Execution) porque ele é otimizado para decisão rápida em incidentes ativos, onde o objetivo não é documentar exaustivamente, mas sim reduzir incerteza e orientar ação imediata sob pressão.
+
+No prompt, cada componente aparece de forma direta e operacional:
+
+Context consolida todos os sinais brutos (deploy, métricas, logs, estado do cluster e filas), garantindo que o modelo trabalhe com uma “imagem única” do incidente.
+Analysis força a interpretação causal, conectando mudanças do deploy (psycopg, pool de conexões, timeout) com sintomas (latência, erro, backlog), evitando apenas descrição de dados.
+Recommendation restringe o output a uma decisão única entre opções explícitas (rollback vs scaling vs híbrido), reduzindo ambiguidade.
+Execution traduz a decisão em passos executáveis (comandos e ações de mitigação), transformando análise em resposta operacional.
+
+Comparando com outros frameworks candidatos:
+
+R-I-S-E (Role, Input, Steps, Expected Output)
+Ele seria mais adequado para runbooks ou procedimentos repetitivos, porque enfatiza execução sequencial detalhada.
+
+O que se ganharia: maior padronização e detalhamento operacional, útil para documentação permanente.
+O que se perderia: velocidade de decisão e síntese causal — o modelo tenderia a “ensinar o processo” em vez de decidir rapidamente sob pressão, o que é crítico no incidente descrito.
+
+B-A-B (Before, After, Bridge)
+É forte para comunicação de mudança ou narrativa de impacto, mas fraco para diagnóstico técnico.
+
+O que se ganharia: clareza de impacto (antes vs depois), útil para explicar degradação para stakeholders não técnicos.
+O que se perderia: capacidade de análise profunda de múltiplas variáveis (logs, métricas, deploy), além de não forçar uma decisão operacional clara.
+
+Resumo comparativo:
+
+C-A-R-E prioriza decisão e ação imediata (ideal para war room).
+R-I-S-E prioriza execução detalhada e repetibilidade.
+B-A-B prioriza comunicação e narrativa de impacto.
+
+No contexto do enunciado (decisão em 20 minutos durante incidente ativo), o C-A-R-E é superior porque transforma dados complexos em diagnóstico + escolha + ação, enquanto os outros frameworks ou aumentam o nível de detalhe operacional (R-I-S-E) ou deslocam o foco para comunicação (B-A-B).
