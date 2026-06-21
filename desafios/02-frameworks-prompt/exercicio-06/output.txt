@@ -1,0 +1,122 @@
+# main.tf
+
+locals {
+  common_tags = {
+    Owner       = var.owner
+    CostCenter  = var.cost_center
+    Environment = var.environment
+  }
+
+  bucket_name = "hvt-s3-${var.environment}-${var.name}"
+}
+
+resource "aws_s3_bucket" "hvt_s3_bucket" {
+  bucket = local.bucket_name
+
+  tags = merge(local.common_tags, {
+    Name = "hvt-s3-${var.environment}-${var.name}"
+  })
+}
+
+resource "aws_s3_bucket_versioning" "hvt_s3_bucket_versioning" {
+  bucket = aws_s3_bucket.hvt_s3_bucket.id
+
+  versioning_configuration {
+    status = var.versioning_enabled ? "Enabled" : "Suspended"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "hvt_s3_bucket_sse" {
+  bucket = aws_s3_bucket.hvt_s3_bucket.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "hvt_s3_bucket_pab" {
+  bucket = aws_s3_bucket.hvt_s3_bucket.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_logging" "hvt_s3_bucket_logging" {
+  count  = var.enable_access_logging ? 1 : 0
+  bucket = aws_s3_bucket.hvt_s3_bucket.id
+
+  target_bucket = var.logging_target_bucket
+  target_prefix = var.logging_prefix
+}
+
+# variables.tf
+
+variable "name" {
+  description = "Nome lógico do bucket (usado no padrão hvt-s3-<environment>-<name>)"
+  type        = string
+}
+
+variable "environment" {
+  description = "Nome do ambiente (dev, staging, production)"
+  type        = string
+}
+
+variable "owner" {
+  description = "Dono do recurso (responsável pelo bucket)"
+  type        = string
+}
+
+variable "cost_center" {
+  description = "Centro de custo associado ao recurso"
+  type        = string
+}
+
+variable "versioning_enabled" {
+  description = "Habilita versionamento no bucket S3"
+  type        = bool
+  default     = true
+}
+
+variable "enable_access_logging" {
+  description = "Habilita logging de acesso do bucket S3"
+  type        = bool
+  default     = false
+}
+
+variable "logging_target_bucket" {
+  description = "Bucket destino para logs de acesso S3 (obrigatório se logging estiver habilitado)"
+  type        = string
+  default     = null
+}
+
+variable "logging_prefix" {
+  description = "Prefixo dos logs de acesso no bucket destino"
+  type        = string
+  default     = "s3-access-logs/"
+}
+
+# outputs.tf
+
+output "bucket_id" {
+  description = "ID do bucket S3"
+  value       = aws_s3_bucket.hvt_s3_bucket.id
+}
+
+output "bucket_arn" {
+  description = "ARN do bucket S3"
+  value       = aws_s3_bucket.hvt_s3_bucket.arn
+}
+
+output "bucket_name" {
+  description = "Nome do bucket S3"
+  value       = aws_s3_bucket.hvt_s3_bucket.bucket
+}
+
+output "bucket_domain_name" {
+  description = "Domain name do bucket S3"
+  value       = aws_s3_bucket.hvt_s3_bucket.bucket_domain_name
+}

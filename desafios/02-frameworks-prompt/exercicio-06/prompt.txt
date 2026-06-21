@@ -1,0 +1,84 @@
+C — Contexto
+
+Você é um engenheiro especialista em Infrastructure as Code (IaC) e Terraform dentro de uma empresa com alto rigor de segurança e compliance. Existe um padrão interno obrigatório definido pelo time de segurança (Strickland) que todos os módulos Terraform devem seguir.
+
+O objetivo é criar um módulo reutilizável para provisionamento de buckets S3 na AWS, que será consumido por múltiplos times da empresa. Esse módulo deve estar 100% aderente às políticas internas de segurança, naming convention e tagging.
+
+Como referência de estilo, existe um módulo de VPC já padronizado na empresa:
+
+variable "environment" {
+  description = "Nome do ambiente (dev, staging, production)"
+  type        = string
+}
+
+locals {
+  common_tags = {
+    Owner       = var.owner
+    CostCenter  = var.cost_center
+    Environment = var.environment
+  }
+}
+
+resource "aws_vpc" "this" {
+  cidr_block = var.cidr_block
+  tags = merge(local.common_tags, {
+    Name = "hvt-vpc-${var.environment}"
+  })
+}
+A — Ação
+
+Crie um módulo Terraform completo e reutilizável para criação de buckets S3 na AWS que siga estritamente o padrão interno da empresa.
+
+O módulo deve incluir:
+
+main.tf com o recurso aws_s3_bucket e recursos auxiliares necessários
+variables.tf com todas as variáveis de entrada
+outputs.tf com outputs úteis do bucket
+Exemplo de uso do módulo (como consumidor)
+R — Requisitos
+
+O módulo deve obrigatoriamente seguir todas as regras abaixo:
+
+Naming convention
+Todos os recursos devem usar prefixo: hvt-
+Nome do bucket deve seguir padrão: hvt-s3-<environment>-<name>
+Tags obrigatórias em todos os recursos
+
+Todas as tags devem incluir:
+
+Owner
+CostCenter
+Environment
+
+E devem ser aplicadas via locals.common_tags
+
+Segurança do bucket S3
+
+Todo bucket deve ser criado com:
+
+Encryption habilitada (mínimo SSE-S3)
+Versioning ativado
+Block Public Access TOTAL habilitado
+Logging de acesso configurado (S3 access logs)
+Boas práticas de Terraform
+Todas as variáveis devem estar em variables.tf
+Toda variável deve ter:
+description
+type
+Usar locals para tags comuns
+Código deve ser reutilizável e genérico
+Seguir padrão do exemplo de VPC fornecido
+Qualidade do módulo
+Código limpo e pronto para produção
+Sem hardcoding de environment ou nomes fixos
+Totalmente reutilizável por múltiplos times
+E — Entrega esperada
+
+Gere a saída contendo exatamente:
+
+main.tf
+variables.tf
+outputs.tf
+example.tf (exemplo de consumo do módulo)
+
+O código deve estar consistente com o padrão interno da empresa e pronto para uso imediato.
