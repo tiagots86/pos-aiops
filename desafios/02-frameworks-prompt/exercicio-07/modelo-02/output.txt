@@ -1,0 +1,201 @@
+# Runbook: `[CRITICAL] High memory usage on Chronos API pods (>85% for 10min)`
+
+## 1. Visão do Incidente
+
+* **Descrição:** Os pods da aplicação Chronos API estão consumindo mais de 85% do limite de memória alocado de forma sustentada (por mais de 10 minutos).
+* **Impacto Esperado:** Degradação no tempo de resposta da API, potencial indisponibilidade por *OOMKilled* (Out of Memory) e acionamento de alertas no Beacon.
+* **Critério de Incidente Ativo:** O alerta no Beacon está *Firing* E a execução do comando `kubectl top pods` confirma uso de memória próximo ou superior ao limite estabelecido para os containers.
+* **SLA de Resposta:** 15 minutos (horário comercial) / 30 minutos (fora do horário comercial).
+
+---
+
+## 2. Diagnóstico Inicial
+
+Execute os passos abaixo sequencialmente para isolar a causa raiz do problema.
+
+### Passo 2.1: Verificar o estado dos pods
+
+Verifique se há pods em estado de erro, reiniciando (CrashLoopBackOff) ou se sofreram OOMKilled recentemente.
+
+```bash
+kubectl get pods -n production -l app=chronos-api -o wide
+
+```
+
+* **O que verificar:** A coluna `STATUS` e a coluna `RESTARTS`.
+* **Interpretação:**
+* Se `RESTARTS` for maior que 0, o pod pode estar morrendo por falta de memória (OOMKilled).
+* **Próximo passo:** Se houver restarts, vá para o Passo 2.3 para checar os eventos.
+
+
+
+### Passo 2.2: Avaliar o consumo real de Memória e CPU
+
+Verifique a utilização de recursos em tempo real de todos os pods da aplicação.
+
+```bash
+kubectl top pods -n production -l app=chronos-api
+
+```
+
+* **O que verificar:** A coluna `MEMORY(bytes)`. Compare com o limite conhecido do container.
+* **Interpretação:**
+* Se 1 ou 2 pods estiverem altos, pode ser um problema de balanceamento ou requisição presa.
+* Se TODOS os pods estiverem com memória alta (>85%), indica um problema global (vazamento de memória ou sobrecarga de requisições).
+
+
+
+### Passo 2.3: Analisar eventos recentes do Kubernetes
+
+Busque por eventos de *OOMKilled*, *Evicted* ou falhas no *Liveness Probe*.
+
+```bash
+kubectl get events -n production --sort-by='.metadata.creationTimestamp' | grep chronos-api
+
+```
+
+* **O que verificar:** Mensagens contendo `OOMKilled`, `Killing`, `Unhealthy` ou `Liveness probe failed`.
+* **Interpretação:** Confirma que o Kubernetes está matando a aplicação para proteger o node.
+
+### Passo 2.4: Verificar o status do Autoscaling (HPA)
+
+Valide se o autoscaler está atuando ou se já atingiu o teto de réplicas.
+
+```bash
+kubectl get hpa -n production chronos-api
+
+```
+
+* **O que verificar:** Colunas `TARGETS`, `MINPODS`, `MAXPODS` e `REPLICAS`.
+* **Interpretação:**
+* Se `REPLICAS` estiver em 12 (Max) e `TARGETS` de CPU estiver baixo (< 70%), o HPA não vai escalar mais pods, e a carga de memória por pod não será aliviada.
+
+
+
+### Passo 2.5: Checar logs e dependências via Beacon
+
+Investigue os logs nos últimos 15 minutos buscando por gargalos (timeouts) em dependências.
+
+```bash
+kubectl logs -l app=chronos-api -n production --tail=200 | grep -iE 'error|timeout|exception|ledger|reactor'
+
+```
+
+* **O que verificar:**
+* Erros de conexão ou timeout com `Ledger` (PostgreSQL).
+* Gargalos ou falhas ao ler/escrever no `Reactor` (AWS SQS).
+
+
+* **Interpretação:** Se a API não consegue gravar no banco ou fila, as conexões ficam presas (threads em espera), acumulando objetos na memória e causando o esgotamento do recurso.
+
+---
+
+## 3. Hipóteses Prováveis e Ações Corretivas Imediatas
+
+Com base no diagnóstico, identifique o cenário e atue:
+
+### Hipótese A: Memory Leak (Vazamento de Memória) da Aplicação
+
+* **Como confirmar:** `kubectl top pods` mostra a memória crescendo gradativamente de forma constante ao longo de horas/dias, enquanto a CPU e a carga se mantêm normais.
+* **Ação Imediata:** Reiniciar os pods para limpar a memória temporariamente (Vá para **Mitigação > Ação 4.1**).
+* **Risco associado:** Interrupção momentânea de conexões ativas. O problema voltará a ocorrer até que o código seja corrigido.
+
+### Hipótese B: Aumento de Carga Inesperado
+
+* **Como confirmar:** HPA está no limite máximo (12 réplicas) e o consumo de CPU também está elevado. O Grafana mostra um pico acentuado de RPM (Requests Per Minute).
+* **Ação Imediata:** Aumentar emergencialmente o limite do HPA via Argo CD (Vá para **Mitigação > Ação 4.2**).
+* **Risco associado:** Pode sobrecarregar o banco de dados (Ledger) devido ao maior número de conexões simultâneas.
+
+### Hipótese C: Dependência Degradada (Ledger / Reactor)
+
+* **Como confirmar:** Logs mostram *timeouts* de banco de dados ou AWS SQS. Grafana mostra aumento abrupto na latência (> p99 alto).
+* **Ação Imediata:** Não reinicie os pods da API ainda. Avalie a integridade do Banco de Dados (Ledger) ou escale para o time de Dados/Infraestrutura. Se a dependência recuperar, a API normaliza sozinha.
+* **Risco associado:** Reiniciar a API com o banco fora agravará o cenário (Thundering Herd problem).
+
+---
+
+## 4. Ações de Mitigação (Ordem de Execução)
+
+Execute as ações abaixo conforme a hipótese confirmada.
+
+### Ação 4.1: Rollout Restart Controlado (Via Argo CD / Kubectl)
+
+Se o problema for Memory Leak ou houver pods travados, force a recriação. Como a gestão de estado é feita via GitOps (ArgoCD), o rollout via `kubectl` é seguro pois não altera o manifesto base.
+
+```bash
+kubectl rollout restart deployment/chronos-api -n production
+
+```
+
+Acompanhe o progresso para garantir que novos pods subam saudáveis:
+
+```bash
+kubectl rollout status deployment/chronos-api -n production
+
+```
+
+### Ação 4.2: Scaling Manual Emergencial
+
+Se o limite máximo do HPA for o gargalo de uma sobrecarga de tráfego, realize o ajuste via Argo CD CLI ou via repositório.
+
+*Alteração temporária e emergencial (overriding via ArgoCD app parameters):*
+
+```bash
+argocd app set hvt/chronos-api --parameter hpa.maxReplicas=20
+argocd app sync hvt/chronos-api
+
+```
+
+*(Nota: Lembre-se de registrar a necessidade de alteração do repositório no postmortem).*
+
+---
+
+## 5. Critérios de Escalonamento
+
+Se as ações de mitigação não surtirem efeito, escale para o nível superior.
+
+**Quando acionar `@chronos-core` imediatamente:**
+
+* A memória permanece > 90% por mais de 10 minutos APÓS o rollout restart.
+* O log aponta que a falha real está no **Ledger (PostgreSQL)** ou **Reactor (AWS SQS)** e você não tem acesso para mitigar.
+* O Grafana indica que a taxa de erros HTTP 5xx ultrapassou 5% do tráfego total.
+
+**Modelo de Mensagem de Escalonamento (Slack: `#oncall-chronos`):**
+
+> 🚨 **ESCALONAMENTO DE INCIDENTE** 🚨
+> **Serviço:** Chronos API (Namespace: production)
+> **Alerta:** High memory usage (>85%)
+> **Sintomas atuais:** Memória média dos pods em X%. Taxa de erro em Y%.
+> **Ações já tomadas:**
+> * [x] Análise de logs (encontrado: `colocar resumo se houver erro de DB/SQS`)
+> * [x] Rollout restart executado às `[HORA]`
+> * [x] Ajuste de HPA executado (se aplicável)
+> **Motivo do escalonamento:** O consumo não reduziu / Banco de dados apresenta lentidão.
+> @chronos-core solicitada assistência.
+> 
+> 
+
+---
+
+## 6. Critérios de Encerramento do Incidente
+
+O incidente só pode ser considerado mitigado/resolvido quando as seguintes condições forem satisfeitas simultaneamente:
+
+1. O consumo médio de memória nos pods estabilizar abaixo de 70% por, no mínimo, **15 minutos contínuos**.
+2. Ausência de pods no status `OOMKilled` ou `CrashLoopBackOff`.
+3. O endpoint `/metrics` e os dashboards do Grafana demonstrarem que a latência (p95/p99) retornou ao *baseline* normal.
+4. O alerta no Beacon transicionar do status *Firing* para *Resolved*.
+
+---
+
+## 7. Ações Pós-Incidente (Postmortem)
+
+Após a estabilização, o plantonista deve garantir que as informações abaixo sejam coletadas para o postmortem:
+
+* **Evidências a arquivar:** Prints do Grafana (Painel de Memória, CPU e Latência) no momento do pico, e extrato dos logs apontando qualquer *timeout* com PostgreSQL/SQS.
+* **Registro das ações:** Tempo exato (timestamp) em que o `rollout restart` ou ajuste de HPA foi executado.
+* **Melhorias para sugerir na pauta:**
+* *Profiling de Memória:* Acionar Engenharia de Software para revisar vazamento (se Hipótese A confirmada).
+* *Ajuste de Limits:* Revisão de `resources.limits.memory` versus a configuração da JVM/Node/Go (dependendo da stack).
+* *Ajuste de HPA:* Avaliar a inclusão de escalonamento baseado em uso de memória (atualmente é apenas CPU a 70%).
+* *Circuit Breaker:* Implementar proteção no código caso o PostgreSQL (Ledger) apresente lentidão.

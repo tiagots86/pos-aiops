@@ -1,0 +1,140 @@
+variables.tf
+
+variable "name" {
+  description = "Nome base do bucket (será concatenado para formar hvt-s3-<environment>-<name>)"
+  type        = string
+}
+
+variable "environment" {
+  description = "Nome do ambiente (dev, staging, production)"
+  type        = string
+}
+
+variable "owner" {
+  description = "Time ou pessoa responsável pelo recurso"
+  type        = string
+}
+
+variable "cost_center" {
+  description = "Centro de custo associado ao recurso para billing"
+  type        = string
+}
+
+variable "log_bucket_id" {
+  description = "ID do bucket S3 central onde os logs de acesso serão armazenados"
+  type        = string
+}
+
+variable "log_prefix" {
+  description = "Prefixo do caminho onde os logs serão armazenados no bucket de destino"
+  type        = string
+  default     = "s3-access-logs/"
+}
+
+main.tf
+
+locals {
+  bucket_name = "hvt-s3-${var.environment}-${var.name}"
+  
+  common_tags = {
+    Owner       = var.owner
+    CostCenter  = var.cost_center
+    Environment = var.environment
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Core S3 Bucket Resource
+# -----------------------------------------------------------------------------
+resource "aws_s3_bucket" "this" {
+  bucket = local.bucket_name
+
+  tags = merge(local.common_tags, {
+    Name = local.bucket_name
+  })
+}
+
+# -----------------------------------------------------------------------------
+# Security: Server Side Encryption (SSE-S3)
+# -----------------------------------------------------------------------------
+resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
+  bucket = aws_s3_bucket.this.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Security: Versioning
+# -----------------------------------------------------------------------------
+resource "aws_s3_bucket_versioning" "this" {
+  bucket = aws_s3_bucket.this.id
+  
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Security: Block Public Access (TOTAL)
+# -----------------------------------------------------------------------------
+resource "aws_s3_bucket_public_access_block" "this" {
+  bucket = aws_s3_bucket.this.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# -----------------------------------------------------------------------------
+# Security: Access Logging
+# -----------------------------------------------------------------------------
+resource "aws_s3_bucket_logging" "this" {
+  bucket = aws_s3_bucket.this.id
+
+  target_bucket = var.log_bucket_id
+  target_prefix = var.log_prefix
+}
+
+outputs.tf
+
+output "bucket_id" {
+  description = "O nome (ID) do bucket S3 provisionado"
+  value       = aws_s3_bucket.this.id
+}
+
+output "bucket_arn" {
+  description = "O ARN (Amazon Resource Name) do bucket S3"
+  value       = aws_s3_bucket.this.arn
+}
+
+output "bucket_domain_name" {
+  description = "O FQDN (Fully Qualified Domain Name) do bucket S3"
+  value       = aws_s3_bucket.this.bucket_domain_name
+}
+
+example.tf
+
+# Exemplo de consumo do módulo por um time de produto
+module "app_documents_bucket" {
+  source = "git::https://github.com/empresa/terraform-aws-s3-secure.git?ref=v1.0.0" # Exemplo de source
+
+  name          = "app-documents"
+  environment   = "production"
+  owner         = "sre-team"
+  cost_center   = "cc-98765"
+  
+  # O bucket de logs geralmente é gerenciado centralmente pelo time de Sec/Ops
+  log_bucket_id = "hvt-s3-production-central-audit-logs"
+  log_prefix    = "s3-access-logs/app-documents/"
+}
+
+# Output para validar a criação no projeto consumidor
+output "app_documents_bucket_arn" {
+  description = "ARN do bucket criado pelo módulo"
+  value       = module.app_documents_bucket.bucket_arn
+}

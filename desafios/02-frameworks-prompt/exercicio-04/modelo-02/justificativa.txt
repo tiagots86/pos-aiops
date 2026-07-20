@@ -1,0 +1,3 @@
+O Task (Tarefa) define a sua persona e missão principal: atuar como especialista em PostgreSQL para criar um relatório mensal de transações do Ledger.
+O Action (Ação) detalha os insumos e as regras estritas de execução: o schema das tabelas, filtros de status e data, além dos agrupamentos e cálculos matemáticos.
+Por fim, o Goal (Objetivo) crava o formato e o propósito da entrega final: uma única query válida, formatada em reais e pronta para uso executivo.

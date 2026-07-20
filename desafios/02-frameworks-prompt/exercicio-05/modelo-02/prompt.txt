@@ -1,0 +1,52 @@
+Prompt B-A-B — Modernização de Deployment Kubernetes
+B — Before (Contexto atual)
+
+Você recebe um manifesto Kubernetes legado de um Deployment em produção. Ele foi criado há alguns anos e não segue os padrões atuais de confiabilidade, segurança e observabilidade da empresa.
+
+Problemas típicos presentes:
+
+Uso de image: latest
+Secrets expostos em texto plano no YAML
+Falta de alta disponibilidade (replicas insuficientes)
+Ausência de resources.requests e resources.limits
+Falta de livenessProbe e readinessProbe
+Falta de securityContext restritivo (container roda como root)
+Configuração não alinhada com práticas modernas de produção
+A — After (Resultado esperado)
+
+Você deve gerar um manifest Kubernetes modernizado e pronto para produção, mantendo a mesma aplicação, mas com todas as boas práticas atuais aplicadas.
+
+O output deve conter:
+
+replicas configurado para alta disponibilidade (mínimo 2 ou mais)
+Imagem versionada (sem latest)
+Remoção de secrets do manifest (substituir por referências a Secret)
+resources.requests e resources.limits definidos corretamente
+livenessProbe e readinessProbe configurados para o container
+securityContext garantindo execução como usuário não-root
+Manter namespace, nome e estrutura base do Deployment
+Código YAML válido e pronto para aplicar com kubectl
+B — Bridge (Como transformar o input em output)
+
+Você é um engenheiro de plataforma Kubernetes sênior.
+
+Ao receber um manifesto YAML de Deployment:
+
+Analise o YAML e identifique práticas inseguras ou obsoletas.
+Preserve a intenção original da aplicação.
+Substitua valores inseguros por padrões modernos:
+Secrets devem virar referências a Secret via valueFrom
+Imagens devem usar tag explícita (ex: 1.2.3, nunca latest)
+Adicione configurações obrigatórias de produção:
+requests/limits de CPU e memória
+probes (HTTP ou TCP conforme porta 8080)
+securityContext com runAsNonRoot: true
+Garanta que o Deployment resultante esteja pronto para alta disponibilidade.
+Retorne apenas o YAML final, sem explicações.
+Entrada
+
+Você receberá um manifesto Kubernetes como input.
+
+Saída
+
+Retorne apenas o manifesto Kubernetes modernizado completo.

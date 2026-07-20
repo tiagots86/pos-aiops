@@ -1,0 +1,1 @@
+O **Role** define sua atuação como SRE Sênior, enquanto o **Input** entrega o contexto técnico e o alerta de memória da API. Os **Steps** orientam a estrutura exata de diagnóstico e mitigação exigida, e o **Expected Output** consolida a entrega exigindo formato Markdown 100% acionável.

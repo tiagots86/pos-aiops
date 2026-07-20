@@ -1,0 +1,131 @@
+Prompt de IA (R-I-S-E) — Runbook de Alta Memória no Chronos API
+R — Role (Papel)
+
+Você é um SRE sênior responsável por confiabilidade de sistemas em Kubernetes (EKS) com forte experiência em incident response, observabilidade e operações de produção.
+Você escreve runbooks que podem ser executados por plantonistas juniores sob pressão, sem conhecimento prévio do sistema.
+
+Seu objetivo é produzir um runbook 100% acionável, determinístico e com comandos reais, reduzindo o tempo médio de resolução de incidentes.
+
+I — Input (Contexto do Sistema)
+
+Você deve usar o seguinte contexto técnico:
+
+Serviço: Chronos API
+Infraestrutura: AWS EKS
+Namespace: production
+Deploy: via Argo CD (repositório hvt/chronos-api)
+Réplicas atuais: 6 pods
+HPA:
+min: 4
+max: 12
+target CPU: 70%
+Incidente recorrente:
+Alert:
+[CRITICAL] High memory usage on Chronos API pods (>85% for 10min)
+Frequência: ~4x por semana
+Sintoma: consumo elevado de memória nos pods da API Chronos
+Impacto: degradação de performance e acionamento de alerta no Beacon
+Dependências:
+Ledger (PostgreSQL)
+Reactor (AWS SQS queues)
+Observabilidade:
+Métricas: endpoint /metrics
+Logs: Beacon
+Dashboards: Grafana
+Ferramentas disponíveis:
+kubectl
+aws cli
+argocd cli
+Canal de plantão: #oncall-chronos
+Escalação: @chronos-core
+SLA: 15 min (horário comercial), 30 min (fora)
+S — Steps (O que você deve produzir)
+
+Gere um runbook operacional completo e sequencial, cobrindo:
+
+1. Visão do incidente
+Explicação curta do alerta e impacto esperado
+Critério objetivo do que caracteriza o incidente ativo
+2. Diagnóstico inicial (passo a passo executável)
+
+Para cada etapa, inclua obrigatoriamente:
+
+comando exato
+o que ele verifica
+como interpretar saída esperada
+próximos passos dependendo do resultado
+
+Inclua diagnósticos como:
+
+estado dos pods no namespace production
+consumo de memória por pod
+eventos recentes do Kubernetes
+status do HPA
+análise de logs via Beacon
+checagem de latência/erros da API
+verificação de dependências:
+PostgreSQL (Ledger)
+SQS (Reactor)
+3. Hipóteses prováveis e ações corretivas imediatas
+
+Inclua cenários como:
+
+memory leak na aplicação
+aumento de carga inesperado
+autoscaling insuficiente
+dependência degradada (DB ou filas)
+
+Para cada hipótese:
+
+como confirmar
+ação imediata (kubectl, restart, rollout, scale, etc.)
+risco associado
+4. Ações de mitigação (ordem de execução)
+
+Inclua ações como:
+
+restart controlado de pods
+rollout restart via Argo CD
+ajuste temporário de HPA (se aplicável)
+scaling manual emergencial
+verificação de throttling/limits
+5. Critérios objetivos de escalonamento
+
+Defina claramente quando escalar para @chronos-core, por exemplo:
+
+memória > 90% por X minutos após ações iniciais
+falha em reduzir uso após restart/rollout
+impacto em dependências (DB ou SQS instáveis)
+erro 5xx acima de threshold no Grafana
+
+Inclua também:
+
+mensagem pronta para Slack (#oncall-chronos)
+6. Critérios de encerramento do incidente
+
+Explique exatamente quando:
+
+o alerta pode ser considerado resolvido
+métricas devem estar estabilizadas por X minutos
+ausência de erros críticos em logs
+validação no Grafana
+7. Pós-incidente (mínimo obrigatório)
+
+Inclua:
+
+o que registrar no postmortem
+possíveis melhorias (ex: ajuste de HPA, profiling de memória, limites de container, tracing)
+E — Expected Output (Formato da resposta)
+
+O resultado deve ser um runbook em formato Markdown, com:
+
+Títulos claros por seção
+Comandos em blocos de código
+Passos numerados e sequenciais
+Linguagem operacional (sem teoria desnecessária)
+Foco em execução sob pressão
+Sem ambiguidade
+Sem suposições não verificáveis
+Instrução final
+
+Gere o runbook completo para o incidente descrito, garantindo que qualquer plantonista consiga executá-lo do início ao fim sem conhecimento prévio do sistema.

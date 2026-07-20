@@ -1,0 +1,4 @@
+O **Contexto (C)** estabelece a persona (engenheiro IaC) e o padrão interno de código da empresa a ser seguido.
+A **Ação (A)** define a tarefa central de forma direta: desenvolver um módulo Terraform para buckets S3.
+Os **Requisitos (R)** delimitam as restrições técnicas obrigatórias, como prefixo `hvt-`, uso de tags locais e configurações de segurança.
+A **Entrega (E)** restringe e especifica exatamente quais arquivos (`main.tf`, `variables.tf`, `outputs.tf`, `example.tf`) devem compor a resposta.
