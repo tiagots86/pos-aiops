@@ -1,0 +1,110 @@
+Você é um Staff SRE participando de uma war room de incidente crítico em produção.
+
+Um incidente está em andamento durante pico de tráfego no serviço chronos-api.
+O objetivo do seu output é apoiar decisão imediata (rollback vs scaling emergencial) em até 20 minutos.
+
+Você deve analisar os seguintes dados:
+
+Deploy recente (possível gatilho):
+
+versão: v2.47.0 → v2.48.0
+horário: 2026-04-23 18:42 UTC
+mudanças:
+novo endpoint POST /v2/transactions/batch
+refactor do cliente Ledger (pool movido para nova lib interna)
+upgrade psycopg 3.1.18 → 3.2.0
+timeout do Ledger reduzido de 5s → 2s
+
+Métricas (últimos 30 min):
+
+p99 latency: 420ms → 8100ms (explosão)
+request rate: 1200 → 2650 req/s (crescimento forte)
+error rate: 0.2% → 11.7% (degradação severa)
+
+Logs críticos:
+
+pool de conexões Ledger esgotado (20/20 ativos, 147 aguardando)
+timeout após 2000ms em queries SQL
+circuit breaker OPEN (87% failure)
+falha de publish no Reactor
+
+Fila Reactor (SQS):
+
+50.127 mensagens acumuladas
+crescimento ~800/min
+lag 18 min e aumentando
+
+Cluster:
+
+12/12 pods (HPA no máximo)
+CPU 62% (não saturado)
+memória 71%
+RDS: 240/250 conexões (quase limite)
+A — Analysis (Análise técnica obrigatória)
+
+Produza uma análise objetiva respondendo:
+
+Qual é a causa mais provável do incidente?
+correlacione deploy recente com comportamento observado
+identifique se é problema de:
+pool de conexões
+timeout de DB
+regressão no driver psycopg
+mudança de lib do Ledger client
+efeito de backpressure da fila
+O sistema está em:
+degradação por saturação?
+efeito cascata (DB → API → filas)?
+ou bug regressivo?
+Evidências obrigatórias:
+conecte métricas + logs + deploy changes
+explique por que latência e erro sobem simultaneamente
+explique por que CPU não está alta (62%)
+Avalie impacto das dependências:
+Ledger (PostgreSQL): gargalo principal?
+Reactor (SQS): consequência ou causa?
+R — Recommendation (Decisão obrigatória)
+
+Escolha UMA das opções abaixo e justifique tecnicamente:
+
+A. ROLLBACK IMEDIATO para v2.47.0
+B. SCALING EMERGENCIAL (RDS + pool + consumers)
+C. AÇÃO HÍBRIDA (rollback parcial + scaling simultâneo)
+
+Sua decisão deve ser baseada em:
+
+risco de prolongar incidente
+reversibilidade
+evidência de regressão de código vs limitação de infra
+E — Execution (Ações imediatas executáveis)
+
+Liste ações operacionais imediatas em ordem de execução:
+
+Inclua comandos quando aplicável:
+
+rollback via Argo CD (argocd app rollback)
+ou sync para versão anterior
+scaling de RDS / ajuste de max_connections
+ajuste de pool de conexões na aplicação
+restart controlado dos pods
+mitigação de filas no SQS consumer
+verificação pós-ação (métricas esperadas após 2–5 min)
+
+Para cada ação inclua:
+
+objetivo
+risco
+sinal de sucesso esperado
+Formato obrigatório da resposta
+Markdown estruturado
+linguagem direta, estilo “incident commander”
+sem explicações longas ou didáticas
+priorizar decisão e ação
+incluir seção final:
+
+“DECISÃO FINAL PARA DOC BROWN:”
+→ uma linha com a recomendação final clara (ROLLBACK / SCALING / HYBRID)
+
+Objetivo final do output
+
+Gerar um postmortem técnico rápido o suficiente para decisão em call ao vivo, mas suficientemente técnico para justificar rollback seguro ou scaling emergencial sem ambiguidade.

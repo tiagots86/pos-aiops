@@ -1,0 +1,75 @@
+## A — Analysis
+
+**Causa raiz provável:**
+Regressão na gestão do pool de conexões introduzida pelo refatoramento do cliente Ledger (nova lib) associada ao upgrade do driver `psycopg` e agravada pela redução do timeout (5s → 2s) durante pico de tráfego.
+
+**Diagnóstico do Estado do Sistema:**
+O sistema encontra-se em **efeito cascata (DB → API → Filas)** engatilhado por um **bug regressivo** na nova versão. A aplicação não consegue devolver conexões ao pool rápido o suficiente, gerando bloqueio.
+
+**Correlação de Evidências:**
+
+* **Pool e Timeout:** O log de "20/20 ativos, 147 aguardando" prova *thread starvation*. As requisições ficam em fila interna aguardando conexão. O timeout de 2000ms é atingido antes que a query execute ou que a conexão seja adquirida, gerando a taxa de erro de 11.7%.
+* **Latência e Erro simultâneos:** A latência explode (p99 8100ms) devido ao tempo de espera pelo pool somado à contenção do banco. O erro ocorre quando o circuit breaker abre (87% failure) ao atingir o limite de timeouts (2s) no Ledger.
+* **CPU Baixa (62%):** A CPU não está saturada porque o gargalo não é computacional. As threads dos pods estão em estado I/O-bound (*waiting/sleeping*), bloqueadas à espera de comunicação de rede/banco de dados.
+* **Dependências:**
+* **Ledger (PostgreSQL):** É o gargalo primário e o ofensor da latência. Com 240/250 conexões, o banco está no limite crítico de *connection limits*.
+* **Reactor (SQS):** É consequência direta. O Circuit Breaker aberto impede o processamento das transações e o publish de sucesso, gerando acúmulo (50k) e crescimento da fila.
+
+
+
+---
+
+## R — Recommendation
+
+**A. ROLLBACK IMEDIATO para v2.47.0**
+
+**Justificativa Técnica:**
+Não podemos adotar *Scaling Emergencial (B)* ou *Híbrido (C)* porque o RDS já está em 240/250 conexões (96% de capacidade). Aumentar os pods do `chronos-api` (que já estão com HPA no talo em 12/12) via alteração de limite causaria o esgotamento total das conexões do banco (Connection Refused no PostgreSQL), derrubando não apenas esta API, mas potenciais outros serviços que dividem o cluster de banco.
+
+O incidente decorre de um erro de software/configuração (connection leak ou timeout agressivo na nova lib), não de falta de infraestrutura. A reversibilidade é alta e imediata voltando o código para o estado anterior (timeout de 5s e lib legada estável), o que limpará a contenção de I/O instantaneamente.
+
+---
+
+## E — Execution
+
+**1. Rollback da Aplicação (Imediato)**
+
+* **Ação:** Reverter para o último ReplicaSet saudável via GitOps.
+* **Comando:** `argocd app rollback chronos-api --revision <hash_v2.47.0>` (ou `argocd app sync chronos-api --revision <hash_v2.47.0>` dependendo da estratégia de history).
+* **Objetivo:** Restaurar a imagem v2.47.0 com a biblioteca antiga do Ledger e timeout de 5s.
+* **Risco:** Queda momentânea de conexões ativas durante o SIGTERM dos pods atuais.
+* **Sinal de sucesso:** Pods subindo com a imagem antiga.
+
+**2. Restart Controlado (Clear Connection Pool)**
+
+* **Ação:** Forçar recriação dos pods caso o sync atrase, para matar conexões presas no RDS.
+* **Comando:** `kubectl rollout restart deploy/chronos-api -n production`
+* **Objetivo:** Liberar as 240 conexões presas no PostgreSQL imediatamente, resetando o pool para os novos pods.
+* **Risco:** Aumento de latência de cold start nos primeiros segundos.
+* **Sinal de sucesso:** Conexões no RDS caindo drasticamente de 240 para o baseline (~50-100).
+
+**3. Mitigação Temporária de Filas SQS**
+
+* **Ação:** Pausar ou reduzir o *concurrency* dos consumers do Reactor (se não estiverem atrelados ao mesmo deploy).
+* **Comando:** Escalar consumer deployment para 0 ou ajustar `batch_size`.
+* **Objetivo:** Evitar que as 50k mensagens em backlog bombardeiem a API assim que ela voltar a responder, causando um *thundering herd effect*.
+* **Risco:** Aumento momentâneo do lag da fila (18min -> >20min).
+* **Sinal de sucesso:** Nenhuma mensagem indo para DLQ (Dead Letter Queue) por falsos positivos durante o restart da API.
+
+**4. Verificação Pós-Ação (2–5 min)**
+
+* **Ação:** Monitoramento do painel dourado (Golden Signals).
+* **Objetivo:** Confirmar estancamento da degradação.
+* **Risco:** Zero.
+* **Sinal de sucesso:**
+* Error rate caindo de 11.7% para < 1%.
+* Conexões do RDS estabilizadas longe de 250.
+* Circuit Breaker transitando de OPEN para HALF-OPEN e depois CLOSED.
+* Retomada do escoamento da fila do SQS (crescimento < 0/min).
+
+
+
+---
+
+DECISÃO FINAL PARA DOC BROWN:
+→ ROLLBACK IMEDIATO PARA V2.47.0
