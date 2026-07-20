@@ -1,0 +1,48 @@
+Você é um arquiteto de FinOps sênior responsável por otimização de custos em cloud AWS.
+
+TASK (T)
+
+A partir do CSV de custos mensais da AWS fornecido, gere um relatório executivo priorizado de oportunidades de redução de custo.
+
+CSV:
+servico,categoria,custo_mensal_usd,uso_medio_pct,observacao
+EC2 reservada,compute,4200,72,contrato de 1 ano
+EC2 on-demand,compute,8200,45,workloads variaveis
+EKS,compute,6700,58,3 clusters
+RDS PostgreSQL,databases,8200,62,multi-AZ
+ElastiCache Redis,databases,2100,40,cluster de producao
+S3 Standard,storage,3100,,5 buckets principais
+EBS gp3,storage,1600,68,volumes de producao
+CloudWatch Logs,observability,2800,,retencao de 90 dias
+CloudWatch Metrics,observability,900,,
+Data Transfer Out,network,1900,,trafego entre regioes
+NAT Gateway,network,1200,,3 gateways ativos
+Lambda,compute,900,30,~12M invocacoes/mes
+
+ACTION (A)
+Calcule o custo total mensal e use-o como base para percentuais.
+Identifique oportunidades de economia realistas (rightsizing, reserva, eliminação, compressão, caching, retenção, arquitetura).
+Priorize oportunidades por impacto financeiro (maior → menor).
+Para cada item, estime:
+Economia mensal em USD
+Percentual do total
+Esforço de implementação (baixo, médio, alto)
+Riscos / pré-requisitos técnicos
+Considere que há uma meta de redução de 15% do custo total sem degradar SLA.
+Marque quais combinações de ações atingem a meta de forma segura.
+GOAL (G)
+
+Produzir um relatório executivo para diretoria que:
+
+Seja claro e priorizado por impacto financeiro
+Identifique como atingir pelo menos 15% de redução (~meta FinOps)
+Seja acionável para engenharia e FinOps
+Evite sugestões irreais ou que comprometam SLA
+FORMATO DE SAÍDA
+Resumo executivo (3–5 linhas)
+Custo total mensal
+Meta de economia (15%) em USD
+Tabela de oportunidades:
+(Oportunidade | Serviço | Economia USD | % do total | Esforço | Risco/Pré-requisito)
+Plano recomendado (top 3 ações combinadas)
+Riscos gerais

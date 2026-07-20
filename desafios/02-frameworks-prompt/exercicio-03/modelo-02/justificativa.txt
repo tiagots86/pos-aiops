@@ -1,0 +1,4 @@
+O framework TAG estrutura o prompt original separando as instruções em três siglas explícitas:
+Task (T): Define a missão principal de gerar o relatório executivo a partir dos dados do CSV.
+Action (A): Lista as ações práticas necessárias, como calcular custos, identificar oportunidades e priorizar.
+Goal (G): Traça o objetivo final de entregar um plano claro à diretoria, atingindo a meta de 15% de economia.

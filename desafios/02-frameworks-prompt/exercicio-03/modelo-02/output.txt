@@ -1,0 +1,62 @@
+Aqui está o relatório executivo detalhado, focado em maximizar a eficiência dos seus recursos na AWS sem comprometer a performance ou a resiliência (SLA) das suas aplicações.
+
+### Resumo Executivo
+
+Este relatório apresenta uma análise estratégica do consumo atual na AWS, identificando ineficiências principalmente em recursos de *Compute* (subutilização de EC2) e *Databases* (ausência de reservas no RDS). O plano mapeia um potencial de redução superior a 21%, mas foca em uma combinação de ações de baixo e médio esforço capaz de superar a meta de 15% de economia com segurança. As ações sugeridas protegem o SLA das aplicações de produção e alinham a infraestrutura às melhores práticas do AWS Well-Architected Framework.
+
+### Visão Geral Financeira
+
+* **Custo Total Mensal Atual:** $41.800
+* **Meta de Economia (15%):** $6.270 mensais
+
+---
+
+### Tabela de Oportunidades Priorizadas
+
+| Oportunidade | Serviço | Economia Mensal | % do Total | Esforço | Risco / Pré-requisito |
+| --- | --- | --- | --- | --- | --- |
+| **Reservas de Instâncias (RIs)** | RDS PostgreSQL | $2.460 | 5,8% | Baixo | **Risco:** Lock-in de 1 ou 3 anos.<br>
+
+<br>**Pré-req:** Estabilidade confirmada do tipo de instância/engine. |
+| **Rightsizing + Compute Savings Plan** | EC2 on-demand | $2.400 | 5,7% | Médio | **Risco:** Falta de capacidade se o pico de CPU for subestimado.<br>
+
+<br>**Pré-req:** Análise de métricas de pico (CPU/Memória) nos últimos 30 dias. |
+| **Autoscaling & Spot para Non-Prod** | EKS | $1.340 | 3,2% | Alto | **Risco:** Interrupção de Pods de produção.<br>
+
+<br>**Pré-req:** Implementação de Karpenter e separação rigorosa via Node Groups. |
+| **Tierização e Retenção de Logs** | CloudWatch Logs | $1.120 | 2,6% | Baixo | **Risco:** Consultas mais lentas para logs antigos.<br>
+
+<br>**Pré-req:** Reduzir retenção quente para 30 dias e exportar logs antigos para S3 Glacier. |
+| **S3 Intelligent-Tiering** | S3 Standard | $930 | 2,2% | Baixo | **Risco:** Custo marginal de monitoramento do serviço.<br>
+
+<br>**Pré-req:** Aplicar nos 5 buckets principais. Sem impacto de SLA de acesso. |
+| **Rightsizing de Cache** | ElastiCache Redis | $630 | 1,5% | Médio | **Risco:** Evicção de chaves se a memória for reduzida além do limite.<br>
+
+<br>**Pré-req:** Monitorar métricas de *SwapUsage* e *Evictions* antes do downgrade. |
+
+---
+
+### Plano Recomendado (Top 3 Ações Combinadas)
+
+A combinação destas três frentes atinge uma **redução mensal de $6.910 (16,5% do total)**, superando a meta de 15% de forma imediata e totalmente segura em relação ao SLA.
+
+1. **Imediato: Compra de Reserved Instances para RDS**
+* Como o cluster é Multi-AZ de produção com uso médio saudável (62%), a demanda é previsível. Assinar RIs de 1 ano (No Upfront) entrega quase 30% de desconto sobre o valor *On-Demand*, garantindo **~$2.460** em economia sem tocar na infraestrutura.
+
+
+2. **Rápido: Otimização de Storage e Observabilidade (S3 + CloudWatch)**
+* Ativar o S3 Intelligent-Tiering para os 5 buckets principais e ajustar o CloudWatch Logs (reduzindo de 90 para 30 dias na camada quente e movendo o restante via *Export Task* para o S3 Glacier). Trata-se de configuração pura via console/IaC, rendendo **~$2.050** mensais com mínimo esforço de engenharia.
+
+
+3. **Planejado: Modernização Comercial do EC2 On-Demand**
+* As instâncias com uso de 45% representam desperdício e *workloads* variáveis. A engenharia deve realizar um *rightsizing* conservador (reduzindo instâncias superdimensionadas) e, sobre a nova base de cálculo, o FinOps assinará um *Compute Savings Plan* (1 ano) para a capacidade contínua garantida. Isso assegura economia de **~$2.400**.
+
+
+
+---
+
+### Riscos Gerais
+
+* **Paralisia por Análise no Rightsizing:** O medo de causar indisponibilidade (SLA) frequentemente trava a redução do EC2/ElastiCache. É imperativo que a equipe confie no CloudWatch e utilize ferramentas como o AWS Compute Optimizer.
+* **Riscos de Lock-in Financeiro:** Recomenda-se executar o *rightsizing* ou eliminação de recursos ociosos **antes** de comprometer capital com *Savings Plans* ou *Reserved Instances*, evitando comprar descontos para infraestrutura que deveria ser desligada.
+* **Falta de Governança Contínua:** Sem a adoção de orçamentos (*AWS Budgets*) e alertas de anomalia, as ineficiências identificadas (como logs sem expiração ou EC2 On-Demand excessivos) voltarão a crescer nos próximos meses.
