@@ -1,0 +1,35 @@
+# Usa uma imagem oficial leve do Python baseada em Alpine Linux para reduzir a superfície de ataque e o tamanho final
+FROM python:3.11-alpine
+
+# Define variáveis de ambiente úteis para aplicações Python em containers:
+# - PYTHONDONTWRITEBYTECODE: Impede que o Python gere arquivos .pyc (otimização de disco/container)
+# - PYTHONUNBUFFERED: Garante que os logs da aplicação sejam impressos imediatamente no console (stdout/stderr) sem buffer
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Define o diretório de trabalho padrão dentro do container para isolar os arquivos da aplicação
+WORKDIR /app
+
+# Instala dependências de sistema necessárias para compilar pacotes Python que exigem C (como o psycopg2)
+RUN apk add --no-cache \
+    gcc \
+    musl-dev \
+    libpq-dev
+
+# Copia apenas o arquivo de dependências primeiro para aproveitar o cache de camadas do Docker
+COPY requirements.txt .
+
+# Instala as dependências Python listadas no requirements.txt sem cache desnecessário para manter a imagem enxuta
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copia o restante do código-fonte do projeto para o diretório de trabalho no container
+COPY . .
+
+# Documenta a porta em que a aplicação escuta requisições (útil para orquestradores como o Kubernetes)
+EXPOSE 8080
+
+# Nota de segurança para o Kubernetes: As variáveis de ambiente DATABASE_URL e API_KEY 
+# devem ser injetadas de forma segura em runtime utilizando Secrets ou ConfigMaps do Kubernetes.
+
+# Define o comando padrão para iniciar a aplicação em produção utilizando o Gunicorn com 4 workers
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "4", "app:app"]

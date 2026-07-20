@@ -1,0 +1,1 @@
+No prompt enviado, o papel de Role aparece na definição inicial do especialista (Devops Enginer senior especializado em Docker), o Task detalha o objetivo central de criar o Dockerfile com as premissas dadas, o Fomato estipula a entrega técnica esperada (Dockerfile com comentários), e o restante do texto fornece o Contexto com a estrutura do projeto e tecnologias utilizadas.

@@ -1,0 +1,1 @@
+O framework de prompt utilizado estruturou-se em Role (atribuição de especialista em scripts), Task (diretrizes detalhadas do backup com parâmetros técnicos), Format (saída em Bash com cabeçalho e variáveis), e Context (variáveis de ambiente, S3 e infraestrutura).
